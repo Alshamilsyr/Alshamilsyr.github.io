@@ -176,9 +176,10 @@ const CONFIG = {
   followCodePercent: 5,                       // نسبة خصم الكود
   // خصم تلقائي حسب عدد القطع (الأعلى أولاً)
   tiers: [ {min:20, pct:10}, {min:10, pct:7}, {min:5, pct:3} ],
-  // لاحقاً: رابط الشيت المنشور CSV لتحميل المنتجات والعروض منه
-  sheetProductsCsv: "",
-  sheetOffersCsv: ""
+  // معرّف Google Sheet: الجزء الطويل في رابط الشيت بين /d/ و /edit
+  // مثال: docs.google.com/spreadsheets/d/<<<هذا الجزء>>>/edit
+  // لو تُرك فارغاً يعرض الموقع البيانات التجريبية
+  sheetId: "1fHEsSP-Jw17Oz46ybHmjNFzd5-OjxDTjr72meC3R3pk"
 };
 
 /* ============================================================
@@ -224,10 +225,11 @@ let codeApplied = false;
 const $ = id => document.getElementById(id);
 const money = n => Math.round(n).toLocaleString("ar-EG") + " " + CONFIG.currency;
 const byId = id => PRODUCTS.find(p=>p.id===id);
+const esc = s => String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const isLive = o => o.endsAt>Date.now() && (!o.startsAt || o.startsAt<=Date.now());
 
 function activeOffer(pid){
-  const now = Date.now();
-  return OFFERS.filter(o=>o.productId===pid && o.endsAt>now).sort((a,b)=>b.pct-a.pct)[0];
+  return OFFERS.filter(o=>o.productId===pid && isLive(o)).sort((a,b)=>b.pct-a.pct)[0];
 }
 function unitPrice(p){
   const o = activeOffer(p.id);
@@ -259,18 +261,18 @@ function fmtLeft(ms){
   return (d?d+" يوم ":"")+String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(sc).padStart(2,"0");
 }
 function renderOffers(){
-  const live = OFFERS.filter(o=>o.endsAt>Date.now() && byId(o.productId));
+  const live = OFFERS.filter(o=>isLive(o) && byId(o.productId));
   $("offers").innerHTML = live.length ? live.map(o=>{
     const p = byId(o.productId), np = p.price*(1-o.pct/100);
     return `<div class="offer">
       <span class="badge">خصم ${o.pct}%</span>
-      <div class="em">${p.emoji}</div>
-      <h3>${p.name}</h3>
+      <div class="em">${esc(p.emoji)}</div>
+      <h3>${esc(p.name)}</h3>
       <div class="timer" data-end="${o.endsAt}">⏳ </div>
       <div class="price-row"><span class="price">${money(np)}</span><span class="old">${money(p.price)}</span></div>
       <div class="row">
-        <button class="btn add" onclick="add('${p.id}')">أضف للقائمة</button>
-        <button class="btn wa" onclick="reserve('${o.id}')">احجز واتساب</button>
+        <button class="btn add" onclick="add('${esc(p.id)}')">أضف للقائمة</button>
+        <button class="btn wa" onclick="reserve('${esc(o.id)}')">احجز واتساب</button>
       </div>
     </div>`;
   }).join("") : `<div class="empty">لا توجد عروض حالياً، تابعنا قريباً 🔔</div>`;
@@ -283,36 +285,39 @@ function tick(){
     t.classList.toggle("urgent", left < 6*H);
   });
 }
+let liveSig = "";
+const sig = () => OFFERS.filter(isLive).map(o=>o.id).join("|");
 setInterval(()=>{
   tick();
-  if(OFFERS.some(o=>o.endsAt<=Date.now() && document.querySelector(`[data-end="${o.endsAt}"]`))){ renderOffers(); renderGrid(); renderCart(); }
+  const s = sig();
+  if(s!==liveSig){ liveSig=s; renderOffers(); renderPkgs(); renderGrid(); renderCart(); }
 },1000);
 
 function renderPkgs(){
   $("pkgs").innerHTML = PACKAGES.map(k=>{
     const total = Object.entries(k.items).reduce((s,[id,q])=>s+(byId(id)?unitPrice(byId(id))*q:0),0);
-    const lis = Object.entries(k.items).filter(([id])=>byId(id)).map(([id,q])=>`<li>${byId(id).name}${q>1?" ×"+q:""}</li>`).join("");
+    const lis = Object.entries(k.items).filter(([id])=>byId(id)).map(([id,q])=>`<li>${esc(byId(id).name)}${q>1?" ×"+q:""}</li>`).join("");
     return `<div class="pkg ${k.best?"best":""}">
-      <h3>${k.name}</h3><ul>${lis}</ul>
+      <h3>${esc(k.name)}</h3><ul>${lis}</ul>
       <div class="price-row"><span class="price">${money(total)}</span></div>
-      <button class="btn add" style="width:100%" onclick="addPkg('${k.id}')">أضف الباقة للقائمة</button>
+      <button class="btn add" style="width:100%" onclick="addPkg('${esc(k.id)}')">أضف الباقة للقائمة</button>
     </div>`;
   }).join("");
 }
 function renderTabs(){
-  $("tabs").innerHTML = CATEGORIES.map(c=>`<button class="tab ${c===activeCat?"on":""}" onclick="setCat('${c}')">${c}</button>`).join("");
+  $("tabs").innerHTML = CATEGORIES.map((c,i)=>`<button class="tab ${c===activeCat?"on":""}" onclick="setCat(${i})">${esc(c)}</button>`).join("");
 }
 function renderGrid(){
   const list = PRODUCTS.filter(p=>activeCat==="الكل"||p.cat===activeCat);
   $("grid").innerHTML = list.map(p=>{
     const o = activeOffer(p.id), q = cart[p.id]||0;
-    const imgHtml = p.img ? `<img src="${p.img}" alt="${p.name}" loading="lazy" onerror="this.parentNode.textContent='${p.emoji}'">` : p.emoji;
+    const imgHtml = p.img ? `<img src="${esc(p.img)}" alt="${esc(p.name)}" loading="lazy" data-em="${esc(p.emoji)}" onerror="this.parentNode.textContent=this.dataset.em">` : esc(p.emoji);
     return `<div class="prod">
       <div class="img">${imgHtml}</div>
-      <h4>${p.name}</h4>
+      <h4>${esc(p.name)}</h4>
       <div class="price-row"><span class="price">${money(unitPrice(p))}</span>${o?`<span class="old">${money(p.price)}</span>`:""}</div>
-      ${q?`<div class="qty"><button onclick="chg('${p.id}',-1)">−</button><b>${q}</b><button onclick="chg('${p.id}',1)">+</button></div>`
-         :`<button class="btn add" onclick="add('${p.id}')">+ أضف</button>`}
+      ${q?`<div class="qty"><button onclick="chg('${esc(p.id)}',-1)">−</button><b>${q}</b><button onclick="chg('${esc(p.id)}',1)">+</button></div>`
+         :`<button class="btn add" onclick="add('${esc(p.id)}')">+ أضف</button>`}
     </div>`;
   }).join("");
 }
@@ -335,9 +340,9 @@ function renderCart(){
   const ids = Object.keys(cart).filter(id=>byId(id));
   $("cartItems").innerHTML = ids.length ? ids.map(id=>{
     const p=byId(id), q=cart[id];
-    return `<div class="item"><div class="em">${p.emoji}</div>
-      <div class="n">${p.name}<div class="p">${money(unitPrice(p))} للقطعة</div></div>
-      <div class="qty" style="margin:0"><button onclick="chg('${id}',-1)">−</button><b>${q}</b><button onclick="chg('${id}',1)">+</button></div></div>`;
+    return `<div class="item"><div class="em">${esc(p.emoji)}</div>
+      <div class="n">${esc(p.name)}<div class="p">${money(unitPrice(p))} للقطعة</div></div>
+      <div class="qty" style="margin:0"><button onclick="chg('${esc(id)}',-1)">−</button><b>${q}</b><button onclick="chg('${esc(id)}',1)">+</button></div></div>`;
   }).join("") : `<div class="empty">قائمتك فاضية، أضيفي قطع من المنتجات 🛍️</div>`;
   const next = [...CONFIG.tiers].reverse().find(t=>c.count<t.min);
   $("sum").innerHTML = `
@@ -355,7 +360,7 @@ function addPkg(kid){
   refresh(); toast("تمت إضافة الباقة ✓");
 }
 function refresh(){ save(); renderGrid(); renderCart(); }
-function setCat(c){ activeCat=c; renderTabs(); renderGrid(); }
+function setCat(i){ activeCat=CATEGORIES[i]||"الكل"; renderTabs(); renderGrid(); }
 
 /* ============================================================
    واتساب والمشاركة
@@ -425,7 +430,117 @@ let tt; function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add(
 /* ============================================================
    البداية
    ============================================================ */
-load(); renderOffers(); renderPkgs(); renderTabs(); renderGrid(); renderCart();
+/* ============================================================
+   تحميل البيانات من Google Sheet
+   ============================================================ */
+//<<LOADER
+const IMG_DIR = "images/";
+const AR = "٠١٢٣٤٥٦٧٨٩";
+const latin = s => String(s).replace(/[٠-٩]/g, d=>AR.indexOf(d));
+function parseCSV(text){
+  const rows=[]; let row=[], cur="", q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){
+      if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; }
+      else cur+=ch;
+    } else if(ch==='"') q=true;
+    else if(ch===','){ row.push(cur); cur=""; }
+    else if(ch==='\n'||ch==='\r'){
+      if(ch==='\r'&&text[i+1]==='\n') i++;
+      row.push(cur); cur="";
+      if(row.some(c=>c.trim()!=="")) rows.push(row);
+      row=[];
+    } else cur+=ch;
+  }
+  row.push(cur);
+  if(row.some(c=>c.trim()!=="")) rows.push(row);
+  if(!rows.length) return [];
+  const head = rows[0].map(h=>h.trim().toLowerCase());
+  return rows.slice(1).map(r=>{ const o={}; head.forEach((h,i)=>o[h]=(r[i]||"").trim()); return o; });
+}
+function num(v){ return parseFloat(latin(v).replace(/[^\d.\-]/g,""))||0; }
+function parseDate(s){
+  s = latin(s||"").trim(); if(!s) return 0;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if(m) return new Date(+m[1],m[2]-1,+m[3],+(m[4]||0),+(m[5]||0)).getTime();
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);   // شهر/يوم/سنة
+  if(m) return new Date(+m[3],m[1]-1,+m[2],+(m[4]||0),+(m[5]||0)).getTime();
+  const t = Date.parse(s); return isNaN(t)?0:t;
+}
+const yes = v => ["نعم","yes","true","1"].includes(String(v||"").trim().toLowerCase());
+const no  = v => ["لا","no","false","0"].includes(String(v||"").trim().toLowerCase());
+function buildData(pr, orr, kr, sr){
+  const products = pr.filter(r=>r.id && r.name && !no(r.active)).map(r=>({
+    id:String(r.id), cat:r.category||"أخرى", name:r.name, price:num(r.price),
+    emoji:r.emoji||"🛍️", img:r.image?IMG_DIR+r.image:""
+  }));
+  const cats = ["الكل", ...new Set(products.map(p=>p.cat))];
+  const offers = orr.filter(r=>r.product_id && num(r.discount_percent)>0).map((r,i)=>({
+    id:r.id||("o"+i), productId:String(r.product_id), pct:num(r.discount_percent),
+    title:r.title||"", startsAt:parseDate(r.starts_at), endsAt:parseDate(r.ends_at)
+  })).filter(o=>o.endsAt>0);
+  const map = {};
+  kr.forEach(r=>{
+    if(!r.package_id) return;
+    const k = map[r.package_id] || (map[r.package_id] = {id:r.package_id, name:r.package_id, items:{}, best:false});
+    if(r.name) k.name = r.name;
+    if(r.product_id) k.items[String(r.product_id)] = (k.items[String(r.product_id)]||0) + (num(r.qty)||1);
+    if(yes(r.featured)) k.best = true;
+  });
+  const settings = {};
+  sr.forEach(r=>{ if(r.key) settings[r.key.trim()] = r.value; });
+  return {products, cats, offers, packages:Object.values(map), settings};
+}
+//>>LOADER
+
+async function fetchTab(name){
+  const url = "https://docs.google.com/spreadsheets/d/"+encodeURIComponent(CONFIG.sheetId)+"/gviz/tq?tqx=out:csv&sheet="+encodeURIComponent(name);
+  const ctrl = new AbortController(), to = setTimeout(()=>ctrl.abort(), 8000);
+  try{
+    const r = await fetch(url, {signal:ctrl.signal});
+    if(!r.ok) throw new Error(name+" "+r.status);
+    return parseCSV(await r.text());
+  } finally { clearTimeout(to); }
+}
+function applyData(d){
+  PRODUCTS = d.products; CATEGORIES = d.cats; OFFERS = d.offers; PACKAGES = d.packages;
+  const s = d.settings || {};
+  if(s.whatsapp){
+    let n = latin(s.whatsapp).replace(/\D/g,"");
+    if(n.startsWith("0")) n = "20"+n.slice(1);
+    if(n.length>=10) CONFIG.whatsapp = n;
+  }
+  if(s.facebook_url && /^https?:\/\//.test(s.facebook_url)) CONFIG.facebookUrl = s.facebook_url;
+  if(s.follow_code) CONFIG.followCode = s.follow_code;
+  if(s.follow_percent) CONFIG.followCodePercent = num(s.follow_percent);
+}
+function renderAll(){
+  if(!CATEGORIES.includes(activeCat)) activeCat = "الكل";
+  renderOffers(); renderPkgs(); renderTabs(); renderGrid(); renderCart(); liveSig = sig();
+}
+async function init(){
+  if(!CONFIG.sheetId){ load(); renderAll(); return; }
+  let cached = null;
+  try{ cached = JSON.parse(localStorage.getItem("shamil_data_v1")||"null"); }catch(e){}
+  if(cached && cached.products && cached.products.length){ applyData(cached); load(); renderAll(); }
+  else $("grid").innerHTML = '<div class="empty" style="grid-column:1/-1">جاري تحميل المنتجات…</div>';
+  try{
+    const [pr, orr, kr, sr] = await Promise.all([
+      fetchTab("Products"), fetchTab("Offers").catch(()=>[]),
+      fetchTab("Packages").catch(()=>[]), fetchTab("Settings").catch(()=>[])
+    ]);
+    const d = buildData(pr, orr, kr, sr);
+    if(!d.products.length) throw new Error("no products");
+    applyData(d);
+    try{ localStorage.setItem("shamil_data_v1", JSON.stringify(d)); }catch(e){}
+  }catch(e){
+    console.warn("sheet load failed", e);
+    if(!cached) toast("تعذّر تحميل المنتجات الآن، يتم عرض نسخة تجريبية");
+  }
+  load(); renderAll();
+}
+init();
 </script>
 </body>
 </html>
