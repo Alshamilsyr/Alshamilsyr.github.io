@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>الشامل للكماليات والأواني المنزلية</title>
 <meta name="theme-color" content="#111111">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="الشامل">
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -179,7 +185,9 @@ const CONFIG = {
   // معرّف Google Sheet: الجزء الطويل في رابط الشيت بين /d/ و /edit
   // مثال: docs.google.com/spreadsheets/d/<<<هذا الجزء>>>/edit
   // لو تُرك فارغاً يعرض الموقع البيانات التجريبية
-  sheetId: "1fHEsSP-Jw17Oz46ybHmjNFzd5-OjxDTjr72meC3R3pk"
+  sheetId: "1fHEsSP-Jw17Oz46ybHmjNFzd5-OjxDTjr72meC3R3pk",
+  // معرّف تطبيق OneSignal (آمن للنشر، عكس مفتاح REST)
+  oneSignalAppId: "d8176c2f-571d-4fee-bf4b-5c738e304bd4"
 };
 
 /* ============================================================
@@ -414,9 +422,36 @@ $("codeBtn").onclick = ()=>{
 /* ============================================================
    التنبيهات (مكان الربط مع OneSignal في الخطوة التالية)
    ============================================================ */
-$("notifBtn").onclick = ()=>{
-  // سيتم استبدال هذا بـ OneSignal.Slidedown.promptPush()
-  toast("تفعيل التنبيهات سيُربط في الخطوة التالية 🔔");
+let OS = null;
+window.OneSignalDeferred = window.OneSignalDeferred || [];
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
+const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone===true;
+function notifOn(){ try{ return !!(OS && OS.Notifications.permission && OS.User.PushSubscription.optedIn); }catch(e){ return false; } }
+function updateNotifBtn(){ $("notifBtn").textContent = notifOn() ? "🔔 التنبيهات مفعّلة ✓" : "🔔 فعّل التنبيهات"; }
+OneSignalDeferred.push(async function(OneSignal){
+  try{
+    await OneSignal.init({ appId: CONFIG.oneSignalAppId });
+    OS = OneSignal;
+    updateNotifBtn();
+    OneSignal.User.PushSubscription.addEventListener("change", updateNotifBtn);
+    OneSignal.Notifications.addEventListener("permissionChange", updateNotifBtn);
+  }catch(e){ console.warn("OneSignal init failed", e); }
+});
+$("notifBtn").onclick = async ()=>{
+  // iPhone: الإشعارات تعمل فقط بعد إضافة الموقع للشاشة الرئيسية
+  if(isIOS() && !isStandalone()){
+    return toast("على iPhone: اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية»، وافتح الموقع من الأيقونة وفعّل التنبيهات", 8000);
+  }
+  if(!("Notification" in window)) return toast("متصفحك لا يدعم التنبيهات");
+  if(!OS) return toast("جاري تجهيز التنبيهات، جرّب بعد لحظات");
+  if(notifOn()) return toast("التنبيهات مفعّلة بالفعل ✓");
+  if(Notification.permission==="denied") return toast("التنبيهات محظورة، فعّلها من إعدادات الموقع في المتصفح", 5000);
+  try{
+    await OS.Notifications.requestPermission();
+    if(OS.Notifications.permission && !OS.User.PushSubscription.optedIn) await OS.User.PushSubscription.optIn();
+  }catch(e){ console.warn(e); }
+  updateNotifBtn();
+  if(notifOn()) toast("تم تفعيل التنبيهات 🎉");
 };
 
 /* ============================================================
@@ -425,7 +460,7 @@ $("notifBtn").onclick = ()=>{
 function openCart(){ renderCart(); $("overlay").classList.add("open"); $("drawer").classList.add("open"); }
 function closeCart(){ $("overlay").classList.remove("open"); $("drawer").classList.remove("open"); }
 $("openCart").onclick = openCart; $("closeCart").onclick = closeCart; $("overlay").onclick = closeCart;
-let tt; function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("on"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("on"),2200); }
+let tt; function toast(m, ms=2200){ const t=$("toast"); t.textContent=m; t.classList.add("on"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("on"),ms); }
 
 /* ============================================================
    البداية
