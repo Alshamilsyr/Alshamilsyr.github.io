@@ -40,6 +40,7 @@ h2::before{content:"";width:6px;height:20px;background:var(--yellow-d);border-ra
 .offer{flex:0 0 260px;scroll-snap-align:start;background:var(--card);border:2px solid var(--yellow-d);border-radius:16px;padding:14px;position:relative}
 .badge{position:absolute;top:-10px;inset-inline-start:12px;background:var(--red);color:#fff;font-size:12px;font-weight:800;padding:2px 10px;border-radius:12px}
 .offer .em{font-size:44px;text-align:center}
+.offer .em img{width:150px;height:150px;object-fit:cover;border-radius:12px;display:block;margin:0 auto}
 .offer h3{font-size:15px;margin:4px 0}
 .timer{font-size:13px;background:#fff3cd;border-radius:8px;padding:4px 8px;text-align:center;font-weight:700;margin:6px 0}
 .timer.urgent{background:#fde2e0;color:var(--red)}
@@ -185,7 +186,7 @@ const CONFIG = {
   // معرّف Google Sheet: الجزء الطويل في رابط الشيت بين /d/ و /edit
   // مثال: docs.google.com/spreadsheets/d/<<<هذا الجزء>>>/edit
   // لو تُرك فارغاً يعرض الموقع البيانات التجريبية
-  sheetId: "1fHEsSP-Jw17Oz46ybHmjNFzd5-OjxDTjr72meC3R3pk",
+  sheetId: "",
   // معرّف تطبيق OneSignal (آمن للنشر، عكس مفتاح REST)
   oneSignalAppId: "d8176c2f-571d-4fee-bf4b-5c738e304bd4"
 };
@@ -274,7 +275,7 @@ function renderOffers(){
     const p = byId(o.productId), np = p.price*(1-o.pct/100);
     return `<div class="offer">
       <span class="badge">خصم ${o.pct}%</span>
-      <div class="em">${esc(p.emoji)}</div>
+      <div class="em">${p.img ? `<img src="${esc(p.img)}" alt="${esc(p.name)}" loading="lazy" data-em="${esc(p.emoji)}" onerror="this.parentNode.textContent=this.dataset.em">` : esc(p.emoji)}</div>
       <h3>${esc(p.name)}</h3>
       <div class="timer" data-end="${o.endsAt}">⏳ </div>
       <div class="price-row"><span class="price">${money(np)}</span><span class="old">${money(p.price)}</span></div>
